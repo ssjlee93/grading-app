@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper ──────────────────────────────────────────
+    // Reads the caller's role from /users/{uid}.
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    // ─── Users ───────────────────────────────────────────
+    match /users/{userId} {
+      // Any authenticated user can read user profiles (needed for student lists, etc.)
+      allow read: if request.auth != null;
+
+      // A user can create their own profile on first sign-in
+      allow create: if request.auth != null
+                    && request.auth.uid == userId;
+
+      // Only admins can change roles or delete users
+      allow update, delete: if request.auth != null
+                            && userRole() == 'admin';
+    }
+
+    // ─── Grades ──────────────────────────────────────────
+    match /grades/{gradeId} {
+      // Students can only read their own grades.
+      // Teachers and admins can read all grades.
+      allow read: if request.auth != null
+                  && (userRole() == 'admin'
+                      || userRole() == 'teacher'
+                      || resource.data.studentId == request.auth.uid);
+
+      // Only teachers and admins can create or edit grades
+      allow create, update: if request.auth != null
+                            && (userRole() == 'admin'
+                                || userRole() == 'teacher');
+
+      // Only teachers and admins can delete grades
+      allow delete: if request.auth != null
+                    && (userRole() == 'admin'
+                        || userRole() == 'teacher');
+    }
+
+    // ─── Courses ─────────────────────────────────────────
+    match /courses/{courseId} {
+      // Any authenticated user can view courses
+      allow read: if request.auth != null;
+
+      // Teachers and admins can create courses
+      allow create: if request.auth != null
+                    && (userRole() == 'admin'
+                        || userRole() == 'teacher');
+
+      // Only the course owner or an admin can update/delete
+      allow update, delete: if request.auth != null
+                            && (userRole() == 'admin'
+                                || resource.data.teacherId == request.auth.uid);
+    }
+  }
+}
